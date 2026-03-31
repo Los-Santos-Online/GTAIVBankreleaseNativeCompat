@@ -70,7 +70,6 @@ static NativeAlias g_Aliases[] = {
 	{0x4DD46DAE, "USE_PLAYER_COLOUR_INSTEAD_OF_TEAM_COLOUR", kCommandNoOp, "retail only", 0},
 };
 
-Detour<int(__fastcall*)(const char *progname, const void *args, int argsize, int stacksize)> g_ScrCreateThreadDetour;
 Detour<int(__fastcall*)(BYTE* script, int size)> g_ValidateDetour;
 
 typedef int(__fastcall* LookupNativeFn)(int* tableRoot, DWORD hash);
@@ -82,52 +81,52 @@ static InsertNativeFn g_insertNative = (InsertNativeFn)kInsertNativeAddr;
 static GetInsnSizeFn g_getInsnSize = (GetInsnSizeFn)kInsnSizeAddr;
 
 static int* NativeTableRoot() {
-  return (int*)kNativeTableAddr;
+	return (int*)kNativeTableAddr;
 }
 
 static const NativeAlias* FindAlias(DWORD hash) {
-  for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
-	if (g_Aliases[i].dwHash == hash) {
-	  return &g_Aliases[i];
+	for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
+		if (g_Aliases[i].dwHash == hash) {
+			return &g_Aliases[i];
+		}
 	}
-  }
-  return 0;
+
+	return 0;
 }
 
 static DWORD ReadNativeHash(BYTE* bInstruction) {
-  DWORD b3 = (DWORD)bInstruction[3];
-  DWORD b4 = (DWORD)bInstruction[4];
-  DWORD b5 = (DWORD)bInstruction[5];
-  DWORD b6 = (DWORD)bInstruction[6];
-  return ((b6 << 24) | (b5 << 16) | (b4 << 8) | b3);
+	DWORD b3 = (DWORD)bInstruction[3];
+	DWORD b4 = (DWORD)bInstruction[4];
+	DWORD b5 = (DWORD)bInstruction[5];
+	DWORD b6 = (DWORD)bInstruction[6];
+	return ((b6 << 24) | (b5 << 16) | (b4 << 8) | b3);
 }
 
 static DWORD** HandleAliasByIndex(int iIndex, DWORD** pdwResult) {
-
-  switch (g_Aliases[iIndex].eShim) {
-	case kReturnTrue:
-	  if (pdwResult && *pdwResult) {
-		**pdwResult = 1;
-	  }
-	  break;
-	case kReturnZero:
-	  if (pdwResult && *pdwResult) {
-		**pdwResult = 0;
-	  }
-	  break;
-	case kCommandNoOp:
-	case kLogOnly:
-	default:
-	  break;
-  }
+	switch (g_Aliases[iIndex].eShim) {
+		case kReturnTrue:
+			if (pdwResult && *pdwResult) {
+				**pdwResult = 1;
+			}
+			break;
+		case kReturnZero:
+			if (pdwResult && *pdwResult) {
+				**pdwResult = 0;
+			}
+			break;
+		case kCommandNoOp:
+		case kLogOnly:
+		default:
+			break;
+	}
 
   return pdwResult;
 }
 
 #define DEFINE_ALIAS_WRAPPER(INDEX) \
-  extern "C" DWORD** __fastcall AliasWrapper##INDEX(DWORD** result) { \
-	return HandleAliasByIndex(INDEX, result); \
-  }
+	extern "C" DWORD** __fastcall AliasWrapper##INDEX(DWORD** result) { \
+	  	return HandleAliasByIndex(INDEX, result); \
+	}
 
 DEFINE_ALIAS_WRAPPER(0)
 DEFINE_ALIAS_WRAPPER(1)
@@ -179,17 +178,18 @@ static AliasHandlerFn g_aliasHandlers[] = {
 };
 
 static DWORD HandlerForAlias(int index) {
-  if (index < 0 || index >= (int)(sizeof(g_aliasHandlers) / sizeof(g_aliasHandlers[0]))) {
-	return 0;
-  }
-  return (DWORD)g_aliasHandlers[index];
+	if (index < 0 || index >= (int)(sizeof(g_aliasHandlers) / sizeof(g_aliasHandlers[0]))) {
+		return 0;
+	}
+
+	return (DWORD)g_aliasHandlers[index];
 }
 
 static int ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
 	int iHandler = g_lookupNative(NativeTableRoot(), dwHash);
 	if (iHandler != 0) {
 		if (szResolvedName) {
-		  *szResolvedName = 0;
+			*szResolvedName = 0;
 		}
 		return iHandler;
 	}
@@ -197,7 +197,7 @@ static int ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
 	const NativeAlias* pAlias = FindAlias(dwHash);
 	if (!pAlias || pAlias->eShim == kLogOnly) {
 		if (szResolvedName) {
-		  *szResolvedName = pAlias ? pAlias->szName : "UNKNOWN";
+			*szResolvedName = pAlias ? pAlias->szName : "UNKNOWN";
 		}
 		return 0;
 	}
@@ -208,7 +208,7 @@ static int ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
 
 	for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
 		if (g_Aliases[i].dwHash == dwHash) {
-		  return (int)HandlerForAlias(i);
+			return (int)HandlerForAlias(i);
 		}
 	}
 
@@ -223,28 +223,28 @@ static int ValidatePatchedScript(BYTE* script, int iSize, MissingNativeEntry* pO
 
 	while (iRemaining > 0) {
 		if (*pbCursor == 0x2D) {
-		  DWORD dwHash = ReadNativeHash(pbCursor);
-		  const char* szResolvedName = 0;
-		  int iHandlerPtr = ResolveNativeHandler(dwHash, &szResolvedName);
-		  if (iHandlerPtr == 0) {
-			if (iFoundIndex < iMaxEntries) {
-			  pOutEntries[iFoundIndex].dwHash = dwHash;
-			  pOutEntries[iFoundIndex].dwCounter = (DWORD)(pbCursor - script);
-			  pOutEntries[iFoundIndex].szName = szResolvedName ? szResolvedName : "UNKNOWN";
-			  iFoundIndex++;
+			DWORD dwHash = ReadNativeHash(pbCursor);
+			const char* szResolvedName = 0;
+			int iHandlerPtr = ResolveNativeHandler(dwHash, &szResolvedName);
+			if (iHandlerPtr == 0) {
+				if (iFoundIndex < iMaxEntries) {
+					pOutEntries[iFoundIndex].dwHash = dwHash;
+					pOutEntries[iFoundIndex].dwCounter = (DWORD)(pbCursor - script);
+					pOutEntries[iFoundIndex].szName = szResolvedName ? szResolvedName : "UNKNOWN";
+					iFoundIndex++;
+				}
+				iResult = 0;
+			} else {
+				pbCursor[3] = (BYTE)iHandlerPtr;
+				pbCursor[4] = (BYTE)(iHandlerPtr >> 8);
+				pbCursor[5] = (BYTE)(iHandlerPtr >> 16);
+				pbCursor[6] = (BYTE)(iHandlerPtr >> 24);
 			}
-			iResult = 0;
-		  } else {
-			pbCursor[3] = (BYTE)iHandlerPtr;
-			pbCursor[4] = (BYTE)(iHandlerPtr >> 8);
-			pbCursor[5] = (BYTE)(iHandlerPtr >> 16);
-			pbCursor[6] = (BYTE)(iHandlerPtr >> 24);
-		  }
 		}
 
 		int iStep = g_getInsnSize(pbCursor);
 		if (iStep <= 0 || iStep > iRemaining) {
-		  break;
+			break;
 		}
 
 		pbCursor += iStep;
@@ -252,27 +252,6 @@ static int ValidatePatchedScript(BYTE* script, int iSize, MissingNativeEntry* pO
 	}
 
 	return iResult ? iFoundIndex : -iFoundIndex;
-}
-
-static int __fastcall ScrCreateThread(const char *progname, const void *args, int argsize, int stacksize) {
-	int(__fastcall*pfnOrig)(const char *progname, const void *args, int argsize, int stacksize) = 
-		(decltype(pfnOrig))g_ScrCreateThreadDetour.SaveStub;
-	
-	if (stacksize > 1024) {
-		auto res = pfnOrig(progname, args, argsize, 1024);
-		DbgPrint("overriding stack size for thread %i %i", res, stacksize);
-		return res;
-	}
-
-	auto res = pfnOrig(progname, args, argsize, stacksize);
-
-	DbgPrint("creating scr thread with id %i with stack size %i\n", res, stacksize);
-
-	if (res == 0) {
-		return 22;
-	}
-
-	return res;
 }
 
 static int __fastcall ValidateHook(BYTE* script, int size) {
@@ -330,13 +309,19 @@ static void InstallHooks() {
 	//rwf93: force RAG socket to use port 2001
 	*(BYTE*)(0x823248B0 + 7) = 0xD1;
 	
+	// fix stack sizes
+	// thx jason098
+	*(DWORD*)(0x82852820) = 0x38600014;
+	*(DWORD*)(0x8285282C) = 0x38600014;
+	*(DWORD*)(0x82852874) = 0x38600003;
+	*(DWORD*)(0x82852888) = 0x38802000;
+
 	// TODO(rwf93): fix for retail?
 #if 0
 	PatchModuleImport(pLdr, "xam.xex", 51, (DWORD)NetDll_XNetStartupHook);
 	PatchModuleImport(pLdr, "xam.xex", 3, (DWORD)NetDll_socketHook);
 #endif
 
-	g_ScrCreateThreadDetour.SetupDetour(kScrCreateThread, ScrCreateThread);
 	g_ValidateDetour.SetupDetour(kValidateAddr, ValidateHook);
 }
 
