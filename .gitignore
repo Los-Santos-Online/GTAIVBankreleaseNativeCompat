@@ -1,0 +1,6 @@
+.vs
+[Dd]ebug/
+[Rr]elease/
+xkelib/[Dd]ebug/
+xkelib/[Rr]elease/
+*.vcxproj.user
