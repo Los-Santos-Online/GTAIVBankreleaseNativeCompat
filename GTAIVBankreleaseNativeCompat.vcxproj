@@ -77,6 +77,9 @@
     <Deploy>
       <DeploymentType>CopyToHardDrive</DeploymentType>
     </Deploy>
+    <PostBuildEvent>
+      <Command>powershell -ExecutionPolicy Bypass -File "$(ProjectDir)tools\make_xenia_xex.ps1" -InputXex "$(TargetDir)$(TargetName).xex" -OutputXex "$(TargetDir)$(TargetName)_xenia.xex" -AllDataToCode -XexToolPath "$(ProjectDir)tools\xextool.exe"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Xbox 360'">
     <ClCompile>
@@ -110,6 +113,9 @@
     <Deploy>
       <DeploymentType>CopyToHardDrive</DeploymentType>
     </Deploy>
+    <PostBuildEvent>
+      <Command>powershell -ExecutionPolicy Bypass -File "$(ProjectDir)tools\make_xenia_xex.ps1" -InputXex "$(TargetDir)$(TargetName).xex" -OutputXex "$(TargetDir)$(TargetName)_xenia.xex" -AllDataToCode -XexToolPath "$(ProjectDir)tools\xextool.exe"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Hooking.h" />

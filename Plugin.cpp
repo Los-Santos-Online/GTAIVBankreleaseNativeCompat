@@ -2,24 +2,62 @@
 #include "Hooking.h"
 
 static const DWORD kTargetTitleId = 0x54540816;
-static const DWORD kTargetTimestamp = 0x47C7E580;
+static const DWORD kBankTimestamp = 0x47C7E580;
+static const DWORD kBetaTimestamp = 0x47C7E9C1;
 
-static const DWORD kValidateAddr = 0x823DD858;
-static const DWORD kScrCreateThread = 0x823DDC88;
-static const DWORD kLookupNativeAddr = 0x823DF7C8;
-static const DWORD kInsnSizeAddr = 0x823DBA30;
-static const DWORD kNativeTableAddr = 0x82DBAB04;
+static const DWORD kBankValidateAddr = 0x823DD858;
+static const DWORD kBankScrCreateThread = 0x823DDC88;
+static const DWORD kBankLookupNativeAddr = 0x823DF7C8;
+static const DWORD kBankInsnSizeAddr = 0x823DBA30;
+static const DWORD kBankNativeTableAddr = 0x82DBAB04;
+
+static const DWORD kBetaValidateAddr = 0x82471D18;
+static const DWORD kBetaScrCreateThread = 0x824723C8;
+static const DWORD kBetaLookupNativeAddr = 0x82474308;
+static const DWORD kBetaInsnSizeAddr = 0x8246EA78;
+static const DWORD kBetaNativeTableAddr = 0x832C0AE8;
+
+enum ETitleType {
+	RETAIL,
+	BANK,
+	BETA
+};
+
+ETitleType GetTitleType() {
+	PLDR_DATA_TABLE_ENTRY pLdr = (PLDR_DATA_TABLE_ENTRY)*XexExecutableModuleHandle;
+	if (pLdr->TimeDateStamp == kBankTimestamp)
+		return ETitleType::BANK;
+
+	if (pLdr->TimeDateStamp == kBetaTimestamp)
+		return ETitleType::BETA;
+
+	return ETitleType::RETAIL;
+}
+
+bool IsBank() {
+	if (GetTitleType() == ETitleType::BANK) return true;
+	return false;
+}
+
+typedef int(__fastcall* LookupNativeFn)(int* tableRoot, DWORD hash);
+typedef int(__fastcall* GetInsnSizeFn)(BYTE* insn);
+
+// it's a bit cursed
+static int g_pfnLookupNative(DWORD hash) { 
+	return reinterpret_cast<LookupNativeFn>((IsBank() ? kBankLookupNativeAddr : kBetaLookupNativeAddr))(
+		reinterpret_cast<int*>(IsBank() ? kBankNativeTableAddr : kBetaNativeTableAddr), 
+		hash
+	);
+};
+
+static int g_pfnGetInsnSize(BYTE* insn) { 
+	return reinterpret_cast<GetInsnSizeFn>(IsBank() ? kBankInsnSizeAddr : kBetaInsnSizeAddr)(insn);
+};
 
 struct NativeAlias {
 	DWORD dwHash;
 	const char* szName;
 	DWORD pfnHandler;
-};
-
-struct MissingNativeEntry {
-	DWORD dwHash;
-	DWORD dwCounter;
-	const char* szName;
 };
 
 DWORD **HandlerScriptNOP(DWORD **pdwResult) { return pdwResult; }
@@ -74,16 +112,6 @@ static NativeAlias g_Aliases[] = {
 
 Detour<int(__fastcall*)(BYTE* script, int size)> g_ValidateDetour;
 
-typedef int(__fastcall* LookupNativeFn)(int* tableRoot, DWORD hash);
-typedef int(__fastcall* GetInsnSizeFn)(BYTE* insn);
-
-static LookupNativeFn g_pfnLookupNative = (LookupNativeFn)kLookupNativeAddr;
-static GetInsnSizeFn g_pfnGetInsnSize = (GetInsnSizeFn)kInsnSizeAddr;
-
-static int* NativeTableRoot() {
-	return (int*)kNativeTableAddr;
-}
-
 // blame the compiler for me not using std::map or std::unordered_map and linear searching.
 static const NativeAlias* FindAlias(DWORD hash) {
 	for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
@@ -103,33 +131,29 @@ static DWORD ReadNativeHash(BYTE* bInstruction) {
 	return ((b6 << 24) | (b5 << 16) | (b4 << 8) | b3);
 }
 
-static DWORD ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
-	int iHandler = g_pfnLookupNative(NativeTableRoot(), dwHash);
+static DWORD ResolveNativeHandler(DWORD dwHash) {
+	int iHandler = g_pfnLookupNative(dwHash);
 	if (iHandler != 0) {
-		if (szResolvedName) *szResolvedName = 0;
 		return iHandler;
 	}
 
 	const NativeAlias* pAlias = FindAlias(dwHash);
 	if (!pAlias) {
-		if (szResolvedName) *szResolvedName = pAlias ? pAlias->szName : "UNKNOWN";
 		return 0;
 	}
 
-	if (szResolvedName) *szResolvedName = pAlias->szName;
 	return pAlias->pfnHandler;
 }
 
-static bool ValidatePatchedScript(BYTE* pbScript, int iSize, int iMaxEntries) {
+static bool ValidatePatchedScript(BYTE* pbScript, int iSize) {
 	int iRemaining = iSize;
 	BYTE* pbCursor = pbScript;
 
 	while (iRemaining > 0) {
 		if (*pbCursor == 0x2D) {
 			DWORD dwHash = ReadNativeHash(pbCursor);
-			const char* szResolvedName = 0;
-			int iHandlerPtr = ResolveNativeHandler(dwHash, &szResolvedName);
 
+			int iHandlerPtr = ResolveNativeHandler(dwHash);
 			if (iHandlerPtr == 0) return false;
 			
 			pbCursor[3] = (BYTE)iHandlerPtr;
@@ -150,34 +174,8 @@ static bool ValidatePatchedScript(BYTE* pbScript, int iSize, int iMaxEntries) {
 
 static int __fastcall ValidateHook(BYTE* pbScript, int iSize) {
 	DbgPrint("validate enter script=%08X size=%d\n", (DWORD)pbScript, iSize);
-	return ValidatePatchedScript(pbScript, iSize, 64) >= 0 ? 1 : 0;;
+	return ValidatePatchedScript(pbScript, iSize);
 }
-
-// TODO(rwf93): fix for retail?
-#if 0
-int
-NetDll_XNetStartupHook(
-	IN		XNCALLER_TYPE xnc,
-	IN		XNetStartupParams* xnsp
-) {
-	xnsp->cfgFlags = XNET_STARTUP_BYPASS_SECURITY;
-	return ::NetDll_XNetStartup(xnc, xnsp);
-}
-
-int NetDll_socketHook(XNCALLER_TYPE xnc, int af, int type, int protocol)
-{
-	if (protocol == IPPROTO_VDP) protocol = IPPROTO_UDP;
-
-	SOCKET s = NetDll_socket(xnc, af, type, protocol);
-
-	DbgPrint("Receiving socket of type %i, creating socket %p with protocol %i\n", xnc, socket, protocol);
-	
-	int b = 1;
-	NetDll_setsockopt(xnc, s, SOL_SOCKET, SO_MARKINSECURE, (const char*)&b, 4);
-
-	return s;
-}
-#endif
 
 static void InstallHooks() {
 	PLDR_DATA_TABLE_ENTRY pLdr = (PLDR_DATA_TABLE_ENTRY)*XexExecutableModuleHandle;
@@ -186,26 +184,36 @@ static void InstallHooks() {
 		return;
 	}
 
-	if (pLdr->TimeDateStamp != kTargetTimestamp) {
-		DbgPrint("title matched but timestamp mismatch: %08X", pLdr->TimeDateStamp);
+	if (GetTitleType() == ETitleType::RETAIL) {
+		DbgPrint("title matched but is neithber beta nor bank", pLdr->TimeDateStamp);
 		return;
 	}
 
+	DbgPrint("title is %s", IsBank() ? "BANK\n" : "BETA\n");
+
+	// FIXME(rwf93): move to static variables?
+
 	// rwf93: faulting on an stlw withinside the TimeCycle::QueryModifierBoxTree, so i just nop it out with ori %r0, 0, 0
 	// 2lazy4me, probably broke something
-	*(DWORD*)(0x825D7488) = 0x60000000;
+	*(DWORD*)(IsBank() ? 0x825D7488 : 0x82839370) = 0x60000000;
 
 	//rwf93: force RAG socket to use port 2001
-	*(BYTE*)(0x823248B0 + 7) = 0xD1;
+	*(BYTE*)(IsBank() ? 0x823248B4 : 0x8232F994) = 0x38A007D1;// li r5, 0x7D1;
 	
+	//jorby: Prevent widget type asserts from trapping while we debug RAG translation.
+	if (!IsBank()) {
+		*(DWORD*)(0x82308644) = 0x60000000; // NOP twi in bkBank::RemoteHandler
+		*(DWORD*)(0x823368C0) = 0x60000000; // NOP twi in bkGroup::RemoteHandler
+	}
+
 	// fix stack sizes
 	// thx jason098
-	*(DWORD*)(0x82852820) = 0x38600014;
-	*(DWORD*)(0x8285282C) = 0x38600014;
-	*(DWORD*)(0x82852874) = 0x38600003;
-	*(DWORD*)(0x82852888) = 0x38802000;
+	*(DWORD*)(IsBank() ? 0x82852820 : 0x82BBFAF0) = 0x38600014; // li r3, 0x14
+	*(DWORD*)(IsBank() ? 0x8285282C : 0x82BBFAFC) = 0x38600014; // li r3, 0x14
+	*(DWORD*)(IsBank() ? 0x82852874 : 0x82BBFB44) = 0x38600003; // li r3, 3
+	*(DWORD*)(IsBank() ? 0x82852888 : 0x82BBFB58) = 0x38802000; // li r4, 0x2000
 
-	g_ValidateDetour.SetupDetour(kValidateAddr, ValidateHook);
+	g_ValidateDetour.SetupDetour((IsBank() ? kBankValidateAddr : kBetaValidateAddr), ValidateHook);
 }
 
 static VOID CreateSystemThread(LPTHREAD_START_ROUTINE startRoutine) {
