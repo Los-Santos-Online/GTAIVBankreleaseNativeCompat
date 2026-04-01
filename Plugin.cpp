@@ -198,7 +198,7 @@ static void InstallHooks() {
 	*(DWORD*)(IsBank() ? 0x825D7488 : 0x82839370) = 0x60000000;
 
 	//rwf93: force RAG socket to use port 2001
-	*(BYTE*)(IsBank() ? 0x823248B4 : 0x8232F994) = 0x38A007D1;// li r5, 0x7D1;
+	*(DWORD*)(IsBank() ? 0x823248B4 : 0x8232F994) = 0x38A007D1;// li r5, 0x7D1;
 	
 	//jorby: Prevent widget type asserts from trapping while we debug RAG translation.
 	if (!IsBank()) {
