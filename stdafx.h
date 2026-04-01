@@ -6,6 +6,7 @@
 #include <string.h>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 
 #include "xkelib.h"
 #include "exttypes.h"

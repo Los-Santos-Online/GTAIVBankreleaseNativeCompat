@@ -7,23 +7,13 @@ static const DWORD kTargetTimestamp = 0x47C7E580;
 static const DWORD kValidateAddr = 0x823DD858;
 static const DWORD kScrCreateThread = 0x823DDC88;
 static const DWORD kLookupNativeAddr = 0x823DF7C8;
-static const DWORD kInsertNativeAddr = 0x823DC2F8;
 static const DWORD kInsnSizeAddr = 0x823DBA30;
 static const DWORD kNativeTableAddr = 0x82DBAB04;
-
-enum ShimKind {
-	kReturnTrue,
-	kReturnZero,
-	kCommandNoOp,
-	kLogOnly,
-};
 
 struct NativeAlias {
 	DWORD dwHash;
 	const char* szName;
-	ShimKind eShim;
-	const char* szNote;
-	int iHitCount;
+	DWORD pfnHandler;
 };
 
 struct MissingNativeEntry {
@@ -32,58 +22,69 @@ struct MissingNativeEntry {
 	const char* szName;
 };
 
+DWORD **HandlerScriptNOP(DWORD **pdwResult) { return pdwResult; }
+
+DWORD **HandlerScriptTrue(DWORD **pdwResult) {
+	if (pdwResult && *pdwResult) **pdwResult = 1;
+	return pdwResult;
+}
+
+DWORD **HandlerScriptFalse(DWORD **pdwResult) {
+	if (pdwResult && *pdwResult) **pdwResult = 0;
+	return pdwResult;
+}
+
 static NativeAlias g_Aliases[] = {
-	{0xB12B4573, "ADD_TO_PREVIOUS_BRIEF_WITH_UNDERSCORE", kCommandNoOp, "retail only", 0},
-	{0x51A7743F, "ALLOW_LOCKON_TO_FRIENDLY_PLAYERS", kCommandNoOp, "retail only", 0},
-	{0x6F14A1B3, "ALLOW_STUNT_JUMPS_TO_TRIGGER", kCommandNoOp, "retail only", 0},
-	{0x6F76063F, "ANCHOR_OBJECT", kCommandNoOp, "retail only", 0},
-	{0x02C9EE41, "CAN_START_MISSION_PASSED_TUNE", kReturnTrue, "retail only", 0},
-	{0x46788161, "CAN_START_MISSION_PASSED_TUNE", kReturnTrue, "bank release hash", 0},
-	{0x45D1813F, "DOES_OBJECT_HAVE_PHYSICS", kReturnTrue, "retail only", 0},
-	{0x9E53AFD9, "FLUSH_ALL_OUT_OF_DATE_RADAR_BLIPS_FROM_MISSION_CLEANUP_LIST", kCommandNoOp, "retail only", 0},
-	{0x068485D6, "FORCE_FULL_VOICE", kCommandNoOp, "retail only", 0},
-	{0xA4CA9C1C, "GET_MOTION_CONTROL_PREFERENCE", kReturnZero, "retail only", 0},
-	{0xCB979EE4, "GET_TRAIN_PLAYER_WOULD_ENTER", kReturnZero, "retail only", 0},
-	{0xA4CAD139, "GET_WIDTH_OF_LITERAL_STRING", kReturnZero, "retail only", 0},
-	{0x06FFF399, "UNRESOLVED_CORRUPT_LABEL_06FFF399", kLogOnly, "corrupted retail registration label", 0},
-	{0x6755EAED, "HAS_RESPRAY_HAPPENED", kReturnZero, "retail only", 0},
-	{0x944BA1DC, "IS_AUSSIE_VERSION", kReturnZero, "retail only", 0},
-	{0xB632F152, "IS_CHAR_VISIBLE", kReturnTrue, "retail only", 0},
-	{0x9A99C9C7, "IS_HUD_RETICULE_COMPLEX", kReturnZero, "retail only", 0},
-	{0xBCE03D35, "IS_PED_CLIMBING", kReturnZero, "retail only", 0},
-	{0x5C3BF51B, "IS_SNIPER_INVERTED", kReturnZero, "retail only", 0},
-	{0x9C8802DA, "NETWORK_DID_INVITE_FRIEND", kReturnZero, "retail only", 0},
-	{0x39D26713, "NETWORK_GET_NUM_PARTY_MEMBERS", kReturnZero, "retail only", 0},
-	{0x0FF5356E, "NETWORK_GET_UNACCEPTED_INVITE_EPISODE", kReturnZero, "retail only", 0},
-	{0xF66BCD00, "NETWORK_GET_UNACCEPTED_INVITE_GAME_MODE", kReturnZero, "retail only", 0},
-	{0x63049363, "PRINT_HELP_FOREVER_WITH_STRING_NO_SOUND", kCommandNoOp, "retail only", 0},
-	{0x2F086A44, "SET_COLLIDE_WITH_PEDS", kCommandNoOp, "retail only", 0},
-	{0x3EA7FCE4, "SET_DITCH_POLICE_MODELS", kCommandNoOp, "retail only", 0},
-	{0x076F4216, "SET_DRAW_PLAYER_COMPONENT", kCommandNoOp, "retail only", 0},
-	{0x805814E3, "SET_ENABLE_NEAR_CLIP_SCAN", kCommandNoOp, "retail only", 0},
-	{0x33BD1A80, "SET_LOCAL_PLAYER_PAIN_VOICE", kCommandNoOp, "retail only", 0},
-	{0xF0D28043, "SET_LOCAL_PLAYER_VOICE", kCommandNoOp, "retail only", 0},
-	{0x990085F0, "SET_MOBILE_RADIO_ENABLED_DURING_GAMEPLAY", kCommandNoOp, "retail only", 0},
-	{0xE7B8A712, "SET_PLAYER_PAIN_ROOT_BANK_NAME", kCommandNoOp, "retail only", 0},
-	{0x6F2626E1, "SET_RADAR_AS_INTERIOR_THIS_FRAME", kCommandNoOp, "retail only", 0},
-	{0x5B01902A, "STOP_PED_DOING_FALL_OFF_TESTS_WHEN_SHOT", kCommandNoOp, "retail only", 0},
-	{0x4DD46DAE, "USE_PLAYER_COLOUR_INSTEAD_OF_TEAM_COLOUR", kCommandNoOp, "retail only", 0},
+	{0xB12B4573, "ADD_TO_PREVIOUS_BRIEF_WITH_UNDERSCORE", (DWORD)HandlerScriptNOP},
+	{0x51A7743F, "ALLOW_LOCKON_TO_FRIENDLY_PLAYERS", (DWORD)HandlerScriptNOP},
+	{0x6F14A1B3, "ALLOW_STUNT_JUMPS_TO_TRIGGER", (DWORD)HandlerScriptNOP},
+	{0x6F76063F, "ANCHOR_OBJECT", (DWORD)HandlerScriptNOP},
+	{0x02C9EE41, "CAN_START_MISSION_PASSED_TUNE", (DWORD)HandlerScriptTrue},
+	{0x46788161, "CAN_START_MISSION_PASSED_TUNE", (DWORD)HandlerScriptTrue},
+	{0x45D1813F, "DOES_OBJECT_HAVE_PHYSICS", (DWORD)HandlerScriptTrue},
+	{0x9E53AFD9, "FLUSH_ALL_OUT_OF_DATE_RADAR_BLIPS_FROM_MISSION_CLEANUP_LIST", (DWORD)HandlerScriptNOP},
+	{0x068485D6, "FORCE_FULL_VOICE", (DWORD)HandlerScriptNOP},
+	{0xA4CA9C1C, "GET_MOTION_CONTROL_PREFERENCE", (DWORD)HandlerScriptFalse},
+	{0xCB979EE4, "GET_TRAIN_PLAYER_WOULD_ENTER", (DWORD)HandlerScriptFalse},
+	{0xA4CAD139, "GET_WIDTH_OF_LITERAL_STRING", (DWORD)HandlerScriptFalse},
+	{0x06FFF399, "UNRESOLVED_CORRUPT_LABEL_06FFF399", (DWORD)HandlerScriptNOP},
+	{0x6755EAED, "HAS_RESPRAY_HAPPENED", (DWORD)HandlerScriptFalse},
+	{0x944BA1DC, "IS_AUSSIE_VERSION", (DWORD)HandlerScriptFalse},
+	{0xB632F152, "IS_CHAR_VISIBLE", (DWORD)HandlerScriptTrue},
+	{0x9A99C9C7, "IS_HUD_RETICULE_COMPLEX", (DWORD)HandlerScriptFalse},
+	{0xBCE03D35, "IS_PED_CLIMBING", (DWORD)HandlerScriptFalse},
+	{0x5C3BF51B, "IS_SNIPER_INVERTED", (DWORD)HandlerScriptFalse},
+	{0x9C8802DA, "NETWORK_DID_INVITE_FRIEND", (DWORD)HandlerScriptFalse},
+	{0x39D26713, "NETWORK_GET_NUM_PARTY_MEMBERS", (DWORD)HandlerScriptFalse},
+	{0x0FF5356E, "NETWORK_GET_UNACCEPTED_INVITE_EPISODE", (DWORD)HandlerScriptFalse},
+	{0xF66BCD00, "NETWORK_GET_UNACCEPTED_INVITE_GAME_MODE", (DWORD)HandlerScriptFalse},
+	{0x63049363, "PRINT_HELP_FOREVER_WITH_STRING_NO_SOUND", (DWORD)HandlerScriptNOP},
+	{0x2F086A44, "SET_COLLIDE_WITH_PEDS", (DWORD)HandlerScriptNOP},
+	{0x3EA7FCE4, "SET_DITCH_POLICE_MODELS", (DWORD)HandlerScriptNOP},
+	{0x076F4216, "SET_DRAW_PLAYER_COMPONENT", (DWORD)HandlerScriptNOP},
+	{0x805814E3, "SET_ENABLE_NEAR_CLIP_SCAN", (DWORD)HandlerScriptNOP},
+	{0x33BD1A80, "SET_LOCAL_PLAYER_PAIN_VOICE", (DWORD)HandlerScriptNOP},
+	{0xF0D28043, "SET_LOCAL_PLAYER_VOICE", (DWORD)HandlerScriptNOP},
+	{0x990085F0, "SET_MOBILE_RADIO_ENABLED_DURING_GAMEPLAY", (DWORD)HandlerScriptNOP},
+	{0xE7B8A712, "SET_PLAYER_PAIN_ROOT_BANK_NAME", (DWORD)HandlerScriptNOP},
+	{0x6F2626E1, "SET_RADAR_AS_INTERIOR_THIS_FRAME", (DWORD)HandlerScriptNOP},
+	{0x5B01902A, "STOP_PED_DOING_FALL_OFF_TESTS_WHEN_SHOT", (DWORD)HandlerScriptNOP},
+	{0x4DD46DAE, "USE_PLAYER_COLOUR_INSTEAD_OF_TEAM_COLOUR", (DWORD)HandlerScriptNOP}
 };
 
 Detour<int(__fastcall*)(BYTE* script, int size)> g_ValidateDetour;
 
 typedef int(__fastcall* LookupNativeFn)(int* tableRoot, DWORD hash);
-typedef int(__fastcall* InsertNativeFn)(int* tableRoot, DWORD hash, DWORD handler);
 typedef int(__fastcall* GetInsnSizeFn)(BYTE* insn);
 
-static LookupNativeFn g_lookupNative = (LookupNativeFn)kLookupNativeAddr;
-static InsertNativeFn g_insertNative = (InsertNativeFn)kInsertNativeAddr;
-static GetInsnSizeFn g_getInsnSize = (GetInsnSizeFn)kInsnSizeAddr;
+static LookupNativeFn g_pfnLookupNative = (LookupNativeFn)kLookupNativeAddr;
+static GetInsnSizeFn g_pfnGetInsnSize = (GetInsnSizeFn)kInsnSizeAddr;
 
 static int* NativeTableRoot() {
 	return (int*)kNativeTableAddr;
 }
 
+// blame the compiler for me not using std::map or std::unordered_map and linear searching.
 static const NativeAlias* FindAlias(DWORD hash) {
 	for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
 		if (g_Aliases[i].dwHash == hash) {
@@ -102,166 +103,54 @@ static DWORD ReadNativeHash(BYTE* bInstruction) {
 	return ((b6 << 24) | (b5 << 16) | (b4 << 8) | b3);
 }
 
-static DWORD** HandleAliasByIndex(int iIndex, DWORD** pdwResult) {
-	switch (g_Aliases[iIndex].eShim) {
-		case kReturnTrue:
-			if (pdwResult && *pdwResult) {
-				**pdwResult = 1;
-			}
-			break;
-		case kReturnZero:
-			if (pdwResult && *pdwResult) {
-				**pdwResult = 0;
-			}
-			break;
-		case kCommandNoOp:
-		case kLogOnly:
-		default:
-			break;
-	}
-
-  return pdwResult;
-}
-
-#define DEFINE_ALIAS_WRAPPER(INDEX) \
-	extern "C" DWORD** __fastcall AliasWrapper##INDEX(DWORD** result) { \
-	  	return HandleAliasByIndex(INDEX, result); \
-	}
-
-DEFINE_ALIAS_WRAPPER(0)
-DEFINE_ALIAS_WRAPPER(1)
-DEFINE_ALIAS_WRAPPER(2)
-DEFINE_ALIAS_WRAPPER(3)
-DEFINE_ALIAS_WRAPPER(4)
-DEFINE_ALIAS_WRAPPER(5)
-DEFINE_ALIAS_WRAPPER(6)
-DEFINE_ALIAS_WRAPPER(7)
-DEFINE_ALIAS_WRAPPER(8)
-DEFINE_ALIAS_WRAPPER(9)
-DEFINE_ALIAS_WRAPPER(10)
-DEFINE_ALIAS_WRAPPER(11)
-DEFINE_ALIAS_WRAPPER(12)
-DEFINE_ALIAS_WRAPPER(13)
-DEFINE_ALIAS_WRAPPER(14)
-DEFINE_ALIAS_WRAPPER(15)
-DEFINE_ALIAS_WRAPPER(16)
-DEFINE_ALIAS_WRAPPER(17)
-DEFINE_ALIAS_WRAPPER(18)
-DEFINE_ALIAS_WRAPPER(19)
-DEFINE_ALIAS_WRAPPER(20)
-DEFINE_ALIAS_WRAPPER(21)
-DEFINE_ALIAS_WRAPPER(22)
-DEFINE_ALIAS_WRAPPER(23)
-DEFINE_ALIAS_WRAPPER(24)
-DEFINE_ALIAS_WRAPPER(25)
-DEFINE_ALIAS_WRAPPER(26)
-DEFINE_ALIAS_WRAPPER(27)
-DEFINE_ALIAS_WRAPPER(28)
-DEFINE_ALIAS_WRAPPER(29)
-DEFINE_ALIAS_WRAPPER(30)
-DEFINE_ALIAS_WRAPPER(31)
-DEFINE_ALIAS_WRAPPER(32)
-DEFINE_ALIAS_WRAPPER(33)
-
-typedef DWORD** (__fastcall *AliasHandlerFn)(DWORD**);
-
-static AliasHandlerFn g_aliasHandlers[] = {
-	&AliasWrapper0,  &AliasWrapper1,  &AliasWrapper2,  &AliasWrapper3,
-	&AliasWrapper4,  &AliasWrapper5,  &AliasWrapper6,  &AliasWrapper7,
-	&AliasWrapper8,  &AliasWrapper9,  &AliasWrapper10, &AliasWrapper11,
-	&AliasWrapper12, &AliasWrapper13, &AliasWrapper14, &AliasWrapper15,
-	&AliasWrapper16, &AliasWrapper17, &AliasWrapper18, &AliasWrapper19,
-	&AliasWrapper20, &AliasWrapper21, &AliasWrapper22, &AliasWrapper23,
-	&AliasWrapper24, &AliasWrapper25, &AliasWrapper26, &AliasWrapper27,
-	&AliasWrapper28, &AliasWrapper29, &AliasWrapper30, &AliasWrapper31,
-	&AliasWrapper32, &AliasWrapper33,
-};
-
-static DWORD HandlerForAlias(int index) {
-	if (index < 0 || index >= (int)(sizeof(g_aliasHandlers) / sizeof(g_aliasHandlers[0]))) {
-		return 0;
-	}
-
-	return (DWORD)g_aliasHandlers[index];
-}
-
-static int ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
-	int iHandler = g_lookupNative(NativeTableRoot(), dwHash);
+static DWORD ResolveNativeHandler(DWORD dwHash, const char** szResolvedName) {
+	int iHandler = g_pfnLookupNative(NativeTableRoot(), dwHash);
 	if (iHandler != 0) {
-		if (szResolvedName) {
-			*szResolvedName = 0;
-		}
+		if (szResolvedName) *szResolvedName = 0;
 		return iHandler;
 	}
 
 	const NativeAlias* pAlias = FindAlias(dwHash);
-	if (!pAlias || pAlias->eShim == kLogOnly) {
-		if (szResolvedName) {
-			*szResolvedName = pAlias ? pAlias->szName : "UNKNOWN";
-		}
+	if (!pAlias) {
+		if (szResolvedName) *szResolvedName = pAlias ? pAlias->szName : "UNKNOWN";
 		return 0;
 	}
 
-	if (szResolvedName) {
-		*szResolvedName = pAlias->szName;
-	}
-
-	for (int i = 0; i < (int)(sizeof(g_Aliases) / sizeof(g_Aliases[0])); ++i) {
-		if (g_Aliases[i].dwHash == dwHash) {
-			return (int)HandlerForAlias(i);
-		}
-	}
-
-	return 0;
+	if (szResolvedName) *szResolvedName = pAlias->szName;
+	return pAlias->pfnHandler;
 }
 
-static int ValidatePatchedScript(BYTE* script, int iSize, MissingNativeEntry* pOutEntries, int iMaxEntries) {
+static bool ValidatePatchedScript(BYTE* pbScript, int iSize, int iMaxEntries) {
 	int iRemaining = iSize;
-	BYTE* pbCursor = script;
-	int iFoundIndex = 0;
-	int iResult = 1;
+	BYTE* pbCursor = pbScript;
 
 	while (iRemaining > 0) {
 		if (*pbCursor == 0x2D) {
 			DWORD dwHash = ReadNativeHash(pbCursor);
 			const char* szResolvedName = 0;
 			int iHandlerPtr = ResolveNativeHandler(dwHash, &szResolvedName);
-			if (iHandlerPtr == 0) {
-				if (iFoundIndex < iMaxEntries) {
-					pOutEntries[iFoundIndex].dwHash = dwHash;
-					pOutEntries[iFoundIndex].dwCounter = (DWORD)(pbCursor - script);
-					pOutEntries[iFoundIndex].szName = szResolvedName ? szResolvedName : "UNKNOWN";
-					iFoundIndex++;
-				}
-				iResult = 0;
-			} else {
-				pbCursor[3] = (BYTE)iHandlerPtr;
-				pbCursor[4] = (BYTE)(iHandlerPtr >> 8);
-				pbCursor[5] = (BYTE)(iHandlerPtr >> 16);
-				pbCursor[6] = (BYTE)(iHandlerPtr >> 24);
-			}
+
+			if (iHandlerPtr == 0) return false;
+			
+			pbCursor[3] = (BYTE)iHandlerPtr;
+			pbCursor[4] = (BYTE)(iHandlerPtr >> 8);
+			pbCursor[5] = (BYTE)(iHandlerPtr >> 16);
+			pbCursor[6] = (BYTE)(iHandlerPtr >> 24);
 		}
 
-		int iStep = g_getInsnSize(pbCursor);
-		if (iStep <= 0 || iStep > iRemaining) {
-			break;
-		}
+		int iStep = g_pfnGetInsnSize(pbCursor);
+		if (iStep <= 0 || iStep > iRemaining) break;
 
 		pbCursor += iStep;
 		iRemaining -= iStep;
 	}
 
-	return iResult ? iFoundIndex : -iFoundIndex;
+	return true;
 }
 
-static int __fastcall ValidateHook(BYTE* script, int size) {
-	DbgPrint("validate enter script=%08X size=%d", (DWORD)script, size);
-	MissingNativeEntry missing[64] = {};
-	int validateResult = ValidatePatchedScript(script, size, missing, 64);
-	int result = validateResult >= 0 ? 1 : 0;
-	int missingCount = validateResult >= 0 ? validateResult : -validateResult;
-
-	return result;
+static int __fastcall ValidateHook(BYTE* pbScript, int iSize) {
+	DbgPrint("validate enter script=%08X size=%d\n", (DWORD)pbScript, iSize);
+	return ValidatePatchedScript(pbScript, iSize, 64) >= 0 ? 1 : 0;;
 }
 
 // TODO(rwf93): fix for retail?
@@ -315,12 +204,6 @@ static void InstallHooks() {
 	*(DWORD*)(0x8285282C) = 0x38600014;
 	*(DWORD*)(0x82852874) = 0x38600003;
 	*(DWORD*)(0x82852888) = 0x38802000;
-
-	// TODO(rwf93): fix for retail?
-#if 0
-	PatchModuleImport(pLdr, "xam.xex", 51, (DWORD)NetDll_XNetStartupHook);
-	PatchModuleImport(pLdr, "xam.xex", 3, (DWORD)NetDll_socketHook);
-#endif
 
 	g_ValidateDetour.SetupDetour(kValidateAddr, ValidateHook);
 }
